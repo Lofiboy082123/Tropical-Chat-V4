@@ -1,11 +1,13 @@
-export type ProviderType = 'equinix_metal' | 'aws' | 'hetzner' | 'custom_api';
+export type ProviderType = 'equinix_metal' | 'aws' | 'hetzner' | 'ovhcloud' | 'custom_api';
 
 export type ServerDeploymentStatus = 'unassigned' | 'assigned' | 'maintenance' | 'decommissioned';
 export type ServerProvisioningStatus = 'unprovisioned' | 'provisioning' | 'provisioned' | 'failed';
 export type ServerMonitoringStatus = 'online' | 'offline' | 'unknown';
 
 export interface ServerHardwareSpecs {
-  cpu: string;
+  cpu?: string;
+  cpuManufacturer?: 'Intel' | 'AMD' | 'Ampere' | 'Other';
+  cpuModel?: string;
   cpuCores: number;
   ramGb: number;
   storageGb: number;
@@ -19,15 +21,19 @@ export interface ServerRecord {
   providerResourceId: string;
   hostname: string;
   ipAddress: string;
+  privateIpAddress?: string | null;
   operatingSystem: string;
   specs: ServerHardwareSpecs;
   location: string;
   rentalCostMonthly: number;
   assignedCustomerId: string | null;
+  assignedContractId?: string | null;
   deploymentStatus: ServerDeploymentStatus;
   provisioningStatus: ServerProvisioningStatus;
   monitoringStatus: ServerMonitoringStatus;
   agentId: string | null;
+  provisionedAt?: string | null;
+  lastSuccessfulHeartbeatAt?: string | null;
   isArchived: boolean;
   createdAt: string;
   updatedAt: string;

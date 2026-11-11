@@ -16,6 +16,9 @@ import {
   Clock,
   Shield,
   Zap,
+  TrendingUp,
+  DollarSign,
+  Search,
 } from 'lucide-react';
 import { api } from './services/api';
 import { DashboardMetrics, ServerRecord, AgentRecord, CustomerRecord, ContractRecord } from '@tcc/shared';
@@ -40,6 +43,9 @@ export function App() {
   const [auditLogs, setAuditLogs] = React.useState<any[]>([]);
   const [incidents, setIncidents] = React.useState<any[]>([]);
   const [loading, setLoading] = React.useState(false);
+
+  // Search & Filters
+  const [searchQuery, setSearchQuery] = React.useState('');
 
   // Modals state
   const [showProvModal, setShowProvModal] = React.useState(false);
@@ -225,6 +231,13 @@ export function App() {
       setRemoteOutput(`Command error: ${err.message}`);
     }
   };
+
+  const filteredServers = servers.filter((s) =>
+    searchQuery === '' ||
+    s.hostname.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    s.ipAddress.includes(searchQuery) ||
+    s.provider.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   if (!token) {
     return (
@@ -446,6 +459,63 @@ export function App() {
                 </div>
               </div>
 
+              {/* Business Overview & Financials */}
+              {metrics.financials && (
+                <div className="bg-[#111827] border border-[#1e293b] rounded p-5">
+                  <div className="flex justify-between items-center mb-4">
+                    <div>
+                      <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                        <TrendingUp className="h-4 w-4 text-[#22c55e]" />
+                        Business & Financial Overview
+                      </h3>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        Calculated from active enterprise customer contracts and infrastructure rental expenditures
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-4 gap-4">
+                    <div className="bg-[#0b1220] border border-[#1e293b] rounded p-4">
+                      <div className="text-xs text-slate-400">Monthly Recurring Revenue (MRR)</div>
+                      <div className="text-xl font-bold text-[#22c55e] mt-1">
+                        ${metrics.financials.monthlyRecurringRevenueUsd?.toLocaleString()}
+                      </div>
+                      <div className="text-[10px] text-slate-500 mt-1">
+                        Across {metrics.financials.activeContractsCount} active enterprise contracts
+                      </div>
+                    </div>
+
+                    <div className="bg-[#0b1220] border border-[#1e293b] rounded p-4">
+                      <div className="text-xs text-slate-400">Infrastructure Expenditure</div>
+                      <div className="text-xl font-bold text-slate-300 mt-1">
+                        ${metrics.financials.totalInfrastructureExpenditureUsd?.toLocaleString()}
+                      </div>
+                      <div className="text-[10px] text-slate-500 mt-1">
+                        Rental cost for {metrics.totalManagedServers} dedicated servers
+                      </div>
+                    </div>
+
+                    <div className="bg-[#0b1220] border border-[#1e293b] rounded p-4">
+                      <div className="text-xs text-slate-400">Estimated Gross Margin</div>
+                      <div className="text-xl font-bold text-[#14b8a6] mt-1">
+                        ${metrics.financials.estimatedMonthlyGrossMarginUsd?.toLocaleString()}
+                      </div>
+                      <div className="text-[10px] text-slate-500 mt-1">
+                        Margin: {metrics.financials.grossMarginPercent !== null ? `${metrics.financials.grossMarginPercent}%` : 'N/A'}
+                      </div>
+                    </div>
+
+                    <div className="bg-[#0b1220] border border-[#1e293b] rounded p-4">
+                      <div className="text-xs text-slate-400">Expiring Contracts (30 Days)</div>
+                      <div className="text-xl font-bold text-amber-400 mt-1">
+                        {metrics.financials.expiringContractsCount}
+                      </div>
+                      <div className="text-[10px] text-slate-500 mt-1">Renewal notices queued</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Genuine Infrastructure Utilization Panel */}
               <div className="bg-[#111827] border border-[#1e293b] rounded p-5">
                 <div className="flex justify-between items-center mb-4">
@@ -556,7 +626,19 @@ export function App() {
           {activeTab === 'servers' && (
             <div className="space-y-4">
               <div className="flex justify-between items-center">
-                <h3 className="text-sm font-bold text-white">Managed Dedicated Servers ({servers.length})</h3>
+                <div className="flex items-center gap-3">
+                  <h3 className="text-sm font-bold text-white">Managed Dedicated Servers ({servers.length})</h3>
+                  <div className="relative">
+                    <Search className="h-3.5 w-3.5 absolute left-2.5 top-2.5 text-slate-500" />
+                    <input
+                      type="text"
+                      placeholder="Search hostname, IP, provider..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="bg-[#0b1220] border border-[#1e293b] rounded pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#14b8a6]"
+                    />
+                  </div>
+                </div>
                 <button
                   onClick={() => setShowProvModal(true)}
                   className="bg-[#14b8a6] hover:bg-[#0d9488] text-[#0b1220] px-3 py-1.5 rounded text-xs font-bold transition"
@@ -582,7 +664,7 @@ export function App() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#1e293b]">
-                    {servers.map((s) => (
+                    {filteredServers.map((s) => (
                       <tr key={s.id} className="hover:bg-[#1e293b]/50">
                         <td className="p-3 font-mono text-slate-500">{s.id}</td>
                         <td className="p-3 font-mono font-bold text-white">{s.hostname}</td>
@@ -606,10 +688,10 @@ export function App() {
                         <td className="p-3 capitalize text-slate-400">{s.deploymentStatus}</td>
                       </tr>
                     ))}
-                    {servers.length === 0 && (
+                    {filteredServers.length === 0 && (
                       <tr>
                         <td colSpan={10} className="p-6 text-center text-slate-500">
-                          No servers found. Provision new servers using the Provisioning Engine.
+                          No servers matched your query.
                         </td>
                       </tr>
                     )}
@@ -829,7 +911,7 @@ export function App() {
                         <td className="p-3 font-mono text-slate-500">{cnt.id}</td>
                         <td className="p-3 font-mono text-slate-300">{cnt.customerId}</td>
                         <td className="p-3 font-bold text-white">{cnt.title}</td>
-                        <td className="p-3 font-semibold text-[#14b8a6]">${cnt.monthlyValueUsd}/mo</td>
+                        <td className="p-3 font-semibold text-[#14b8a6]">${cnt.monthlyValueUsd || cnt.monthlyRecurringRevenueUsd}/mo</td>
                         <td className="p-3 text-slate-400">{cnt.renewalDate}</td>
                         <td className="p-3">
                           <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
@@ -1048,6 +1130,7 @@ export function App() {
                   <option value="equinix_metal">Equinix Metal Bare Metal</option>
                   <option value="hetzner">Hetzner Dedicated Root</option>
                   <option value="aws">Amazon Web Services (EC2 Dedicated)</option>
+                  <option value="ovhcloud">OVHcloud Dedicated Infrastructure</option>
                 </select>
               </div>
 
@@ -1058,10 +1141,11 @@ export function App() {
                   onChange={(e) => setProvForm({ ...provForm, planId: e.target.value })}
                   className="w-full bg-[#0b1220] border border-[#1e293b] rounded px-3 py-2 text-sm text-white"
                 >
-                  <option value="c3.medium.x86">c3.medium.x86 (24 cores / 64GB RAM / 960GB NVMe)</option>
-                  <option value="m3.large.x86">m3.large.x86 (32 cores / 256GB RAM / 3.8TB NVMe)</option>
-                  <option value="ax102">ax102 Ryzen 9 7950X3D (16 cores / 128GB RAM)</option>
+                  <option value="c3.medium.x86">Equinix c3.medium.x86 (24 cores / 64GB RAM / 960GB NVMe)</option>
+                  <option value="m3.large.x86">Equinix m3.large.x86 (32 cores / 256GB RAM / 3.8TB NVMe)</option>
+                  <option value="ax102">Hetzner ax102 Ryzen 9 7950X3D (16 cores / 128GB RAM)</option>
                   <option value="c5.metal">AWS c5.metal (96 cores / 192GB RAM)</option>
+                  <option value="scale-a1">OVHcloud Scale-A1 AMD EPYC 7763 (64 cores / 256GB RAM)</option>
                 </select>
               </div>
 

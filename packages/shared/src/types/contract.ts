@@ -8,10 +8,16 @@ export interface ContractRecord {
   startDate: string;
   endDate: string;
   renewalDate: string;
-  monthlyValueUsd: number;
+  monthlyRecurringRevenueUsd: number;
+  monthlyValueUsd?: number; // Backward compatibility alias
+  setupChargeUsd: number;
+  durationMonths: number;
+  slaTier: 'Standard 99.9%' | 'Enterprise 99.99%' | 'Mission-Critical 99.999%';
+  assignedServerIds: string[];
   assignedServiceKeys: string[];
   termsSummary: string;
   isAutoRenew: boolean;
+  gracePeriodDays: number;
   createdAt: string;
   updatedAt: string;
 }

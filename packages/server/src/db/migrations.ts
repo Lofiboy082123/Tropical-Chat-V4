@@ -218,6 +218,11 @@ export const migrations: Migration[] = [
           created_at TEXT NOT NULL DEFAULT (datetime('now')),
           resolved_at TEXT
         );
+        CREATE TABLE IF NOT EXISTS system_settings (
+          key TEXT PRIMARY KEY,
+          value TEXT NOT NULL,
+          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
       `);
     },
   },
@@ -225,18 +230,26 @@ export const migrations: Migration[] = [
     id: 2,
     name: '002_seed_default_roles_and_admin',
     up: (db: IDatabaseDriver) => {
+      const allPermissions = [
+        'DASHBOARD_VIEW', 'INFRA_VIEW', 'INFRA_MANAGE', 'INFRA_PROVISION',
+        'AGENT_VIEW', 'AGENT_MANAGE', 'AGENT_ENROLL', 'CUSTOMER_VIEW',
+        'CUSTOMER_MANAGE', 'CONTRACT_VIEW', 'CONTRACT_MANAGE', 'CONTRACT_ENFORCE',
+        'REMOTE_DIAGNOSTICS', 'REMOTE_EXECUTE', 'AUDIT_VIEW', 'INCIDENT_MANAGE',
+        'USER_MANAGE', 'SETTINGS_MANAGE', 'EXECUTIVE_OVERRIDE'
+      ];
+
       const defaultRoles = [
+        {
+          id: 'role-chairman',
+          name: 'Senior Executive Chairman',
+          description: 'Supreme project authority and ultimate strategic operational oversight',
+          permissions: allPermissions,
+        },
         {
           id: 'role-exec-ops',
           name: 'Executive Operations Overseer',
           description: 'Full strategic visibility and top-level executive controls',
-          permissions: [
-            'DASHBOARD_VIEW', 'INFRA_VIEW', 'INFRA_MANAGE', 'INFRA_PROVISION',
-            'AGENT_VIEW', 'AGENT_MANAGE', 'AGENT_ENROLL', 'CUSTOMER_VIEW',
-            'CUSTOMER_MANAGE', 'CONTRACT_VIEW', 'CONTRACT_MANAGE', 'CONTRACT_ENFORCE',
-            'REMOTE_DIAGNOSTICS', 'REMOTE_EXECUTE', 'AUDIT_VIEW', 'INCIDENT_MANAGE',
-            'USER_MANAGE', 'SETTINGS_MANAGE'
-          ],
+          permissions: allPermissions.filter((p) => p !== 'EXECUTIVE_OVERRIDE'),
         },
         {
           id: 'role-ceo',
@@ -281,10 +294,19 @@ export const migrations: Migration[] = [
       const salt = bcrypt.genSaltSync(10);
       const hash = bcrypt.hashSync('Tropical2026!', salt);
 
+      // Default Admin User: admin / Tropical2026! assigned to Senior Executive Chairman
       db.run(
         `INSERT OR IGNORE INTO users (id, username, email, password_hash, role_id, is_active)
          VALUES (?, ?, ?, ?, ?, 1)`,
-        ['user-admin-default', 'admin', 'admin@tropicalservers.com', hash, 'role-exec-ops']
+        ['user-admin-default', 'admin', 'chairman@tropicalservers.com', hash, 'role-chairman']
+      );
+
+      // Default system settings
+      db.run(
+        `INSERT OR IGNORE INTO system_settings (key, value) VALUES ('organization_name', 'Tropical Servers')`
+      );
+      db.run(
+        `INSERT OR IGNORE INTO system_settings (key, value) VALUES ('motto', 'Secure. Reliable. Tropical.')`
       );
     },
   },

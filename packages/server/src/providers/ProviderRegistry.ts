@@ -2,6 +2,7 @@ import { IProviderAdapter } from './IProviderAdapter.js';
 import { EquinixMetalProviderAdapter } from './EquinixMetalProviderAdapter.js';
 import { HetznerProviderAdapter } from './HetznerProviderAdapter.js';
 import { AwsProviderAdapter } from './AwsProviderAdapter.js';
+import { OvhCloudProviderAdapter } from './OvhCloudProviderAdapter.js';
 import { ProviderType } from '@tcc/shared';
 
 export class ProviderRegistry {
@@ -23,6 +24,13 @@ export class ProviderRegistry {
       new AwsProviderAdapter({
         accessKeyId: process.env.AWS_ACCESS_KEY_ID || 'default-aws-access-key',
         secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || 'default-aws-secret-key',
+      })
+    );
+    this.register(
+      new OvhCloudProviderAdapter({
+        applicationKey: process.env.OVH_APPLICATION_KEY || 'default-ovh-app-key',
+        applicationSecret: process.env.OVH_APPLICATION_SECRET || 'default-ovh-app-secret',
+        consumerKey: process.env.OVH_CONSUMER_KEY || 'default-ovh-consumer-key',
       })
     );
   }

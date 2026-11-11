@@ -12,6 +12,7 @@ import { WebSocketManager } from './WebSocketManager.js';
 
 export interface CreateProvisioningJobInput {
   customerId: string;
+  contractId?: string;
   provider: ProviderType;
   targetHostname: string;
   targetOs: string;
@@ -31,6 +32,35 @@ export class ProvisioningEngine {
   ) {}
 
   queueJob(input: CreateProvisioningJobInput): ProvisioningJob {
+    // 1. Validate customer existence and status
+    const customer = this.db.get<any>(`SELECT * FROM customers WHERE id = ?`, [input.customerId]);
+    if (!customer) {
+      throw new Error(`Customer '${input.customerId}' does not exist.`);
+    }
+    if (customer.status === 'suspended' || customer.status === 'archived') {
+      throw new Error(`Cannot provision servers for a ${customer.status} customer.`);
+    }
+
+    // 2. Validate contract if provided or find active contract
+    if (input.contractId) {
+      const contract = this.db.get<any>(
+        `SELECT * FROM contracts WHERE id = ? AND customer_id = ? AND status = 'ACTIVE'`,
+        [input.contractId, input.customerId]
+      );
+      if (!contract) {
+        throw new Error(`Active contract '${input.contractId}' not found for customer.`);
+      }
+    }
+
+    // 3. Duplicate request protection (check if queued or running job with same hostname exists)
+    const existing = this.db.get<any>(
+      `SELECT id FROM provisioning_jobs WHERE target_hostname = ? AND state NOT IN ('COMPLETED', 'FAILED', 'ROLLED_BACK')`,
+      [input.targetHostname]
+    );
+    if (existing) {
+      throw new Error(`A provisioning job for hostname '${input.targetHostname}' is already in progress.`);
+    }
+
     const id = uuidv4();
     const initialLog: ProvisioningJobLog = {
       timestamp: new Date().toISOString(),
@@ -141,16 +171,20 @@ export class ProvisioningEngine {
     };
 
     try {
-      updateState('VALIDATING_CREDENTIALS', 10, 'Validating infrastructure provider credentials...');
-      const credCheck = await adapter.validateCredentials({ apiKey: 'active-token', apiToken: 'active-token' });
+      // Step 1: Validate Provider Credentials
+      updateState('VALIDATING_CREDENTIALS', 10, `Validating credentials for ${adapter.name}...`);
+      const credCheck = await adapter.validateCredentials({});
       if (!credCheck.valid) {
         throw new Error(`Provider credential validation failed: ${credCheck.message}`);
       }
 
+      // Step 2: Identify and verify resources
       updateState('IDENTIFYING_RESOURCES', 20, `Checking hardware allocation capacity for plan ${job.planId} in ${job.location}...`);
       const plans = await adapter.listAvailablePlans();
+      const plan = plans.find((p) => p.id === job.planId) || plans[0];
 
-      updateState('CREATING_RESOURCE', 35, `Issuing resource provision call to ${adapter.name}...`);
+      // Step 3: Create / provision server resource at provider
+      updateState('CREATING_RESOURCE', 35, `Submitting authenticated allocation to ${adapter.name}...`);
       const providerResult = await adapter.provisionServer({
         hostname: job.targetHostname,
         planId: job.planId,
@@ -158,13 +192,18 @@ export class ProvisioningEngine {
         operatingSystem: job.targetOs,
       });
 
-      updateState('CONFIGURING_OS', 50, `Configuring base operating system (${job.targetOs}) and SSH hardening on ${providerResult.ipAddress}...`);
+      // Step 4: Configure Operating System & Security Baseline
+      updateState('CONFIGURING_OS', 50, `Configuring base operating system (${job.targetOs}) and applying enterprise security baseline on ${providerResult.ipAddress}...`);
+
+      // Step 5: Install Management Components
       updateState('INSTALLING_COMPONENTS', 65, 'Deploying enterprise telemetry utilities and daemon supervisors...');
 
-      updateState('DEPLOYING_AGENT', 80, 'Injecting signed Tropical Servers Monitoring Agent binary and initial enrollment secret...');
+      // Step 6: Deploy Tropical Servers Monitoring Agent
+      updateState('DEPLOYING_AGENT', 80, 'Injecting signed Tropical Servers Monitoring Agent daemon and initial enrollment token...');
       const agentId = `agent-${uuidv4().substring(0, 8)}`;
       const enrollmentToken = `enroll-${uuidv4()}`;
 
+      // Step 7: Register Server Record in TCC Database
       updateState('REGISTERING_TCC', 90, 'Recording provisioned dedicated server in TCC inventory...');
       const serverId = `srv-${uuidv4().substring(0, 8)}`;
 
@@ -197,12 +236,14 @@ export class ProvisioningEngine {
         [agentId, serverId, job.customerId, enrollmentToken, job.targetOs, job.targetHostname]
       );
 
+      // Step 8: Verify Health with provider
       updateState('VERIFYING_HEALTH', 95, 'Performing connectivity verification and provider confirmation check...');
       const check = await adapter.getServerStatus(providerResult.providerResourceId);
       if (check.status !== 'active') {
         throw new Error(`Provider reported unexpected status: ${check.status}`);
       }
 
+      // Step 9: Completed
       const completedLog: ProvisioningJobLog = {
         timestamp: new Date().toISOString(),
         level: 'info',

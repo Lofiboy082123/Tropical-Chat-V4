@@ -1,4 +1,5 @@
 export type RoleName =
+  | 'Senior Executive Chairman'
   | 'Executive Operations Overseer'
   | 'Chief Executive Officer'
   | 'Global Operations Director'
@@ -26,7 +27,8 @@ export type Permission =
   | 'AUDIT_VIEW'
   | 'INCIDENT_MANAGE'
   | 'USER_MANAGE'
-  | 'SETTINGS_MANAGE';
+  | 'SETTINGS_MANAGE'
+  | 'EXECUTIVE_OVERRIDE';
 
 export interface User {
   id: string;

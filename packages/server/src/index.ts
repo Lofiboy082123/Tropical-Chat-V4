@@ -67,7 +67,7 @@ export async function createServer() {
   app.use('/api/v1/provisioning', createProvisioningRouter(provisioningEngine, providerRegistry, authService));
   app.use('/api/v1/agent', createAgentRouter(agentService, authService));
   app.use('/api/v1/management', createCustomerContractRouter(customerService, contractService, authService));
-  app.use('/api/v1/admin', createAdminAuditRouter(auditService, incidentService, authService));
+  app.use('/api/v1/admin', createAdminAuditRouter(auditService, incidentService, authService, db));
   app.use('/api/v1/remote', createRemoteOperationsRouter(remoteService, authService));
 
   return { app, server, db };

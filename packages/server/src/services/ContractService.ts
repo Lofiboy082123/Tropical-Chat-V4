@@ -10,9 +10,14 @@ export interface CreateContractInput {
   endDate: string;
   renewalDate: string;
   monthlyValueUsd: number;
+  setupChargeUsd?: number;
+  durationMonths?: number;
+  slaTier?: 'Standard 99.9%' | 'Enterprise 99.99%' | 'Mission-Critical 99.999%';
+  assignedServerIds?: string[];
   assignedServiceKeys?: string[];
   termsSummary?: string;
   isAutoRenew?: boolean;
+  gracePeriodDays?: number;
 }
 
 export class ContractService {
@@ -176,6 +181,7 @@ export class ContractService {
   }
 
   private mapContractRow(row: any): ContractRecord {
+    const val = Number(row.monthly_value_usd);
     return {
       id: row.id,
       customerId: row.customer_id,
@@ -184,10 +190,16 @@ export class ContractService {
       startDate: row.start_date,
       endDate: row.end_date,
       renewalDate: row.renewal_date,
-      monthlyValueUsd: Number(row.monthly_value_usd),
+      monthlyRecurringRevenueUsd: val,
+      monthlyValueUsd: val,
+      setupChargeUsd: 0,
+      durationMonths: 12,
+      slaTier: 'Enterprise 99.99%',
+      assignedServerIds: [],
       assignedServiceKeys: JSON.parse(row.assigned_services_json || '[]'),
       termsSummary: row.terms_summary || '',
       isAutoRenew: Boolean(row.is_auto_renew),
+      gracePeriodDays: 7,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };

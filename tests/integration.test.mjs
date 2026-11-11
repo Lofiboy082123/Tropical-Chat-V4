@@ -51,18 +51,19 @@ test('TCC Full System Integration Test', async (t) => {
     const data = await res.json();
     assert.ok(data.token);
     assert.equal(data.user.username, 'admin');
-    assert.equal(data.user.roleName, 'Executive Operations Overseer');
+    assert.equal(data.user.roleName, 'Senior Executive Chairman');
     authToken = data.token;
   });
 
-  await t.test('3. Verify Multi-Provider Registry includes Equinix, Hetzner, and AWS', async () => {
+  await t.test('3. Verify Multi-Provider Registry includes Equinix, Hetzner, AWS, and OVHcloud', async () => {
     const res = await fetch(`${baseUrl}/provisioning/providers`, {
       headers: { Authorization: `Bearer ${authToken}` },
     });
     assert.equal(res.status, 200);
     const providers = await res.json();
-    assert.equal(providers.length, 3);
+    assert.equal(providers.length, 4);
     const types = providers.map((p) => p.providerType);
+    assert.ok(types.includes('ovhcloud'));
     assert.ok(types.includes('equinix_metal'));
     assert.ok(types.includes('hetzner'));
     assert.ok(types.includes('aws'));
