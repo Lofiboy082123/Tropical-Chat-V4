@@ -1,0 +1,16 @@
+node_modules/
+dist/
+build/
+*.log
+*.sqlite*
+*.db
+data/
+release/
+.env
+.env.local
+.DS_Store
+coverage/
+packages/*/dist/
+packages/*/build/
+packages/*/release/
+packages/*/node_modules/
