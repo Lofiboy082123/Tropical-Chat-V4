@@ -1,3 +1,12 @@
+export interface InfrastructureUtilization {
+  averageCpuPercent: number | null;
+  averageMemoryPercent: number | null;
+  averageStoragePercent: number | null;
+  totalBandwidthRxBytesSec: number;
+  totalBandwidthTxBytesSec: number;
+  reportingAgentsCount: number;
+}
+
 export interface DashboardMetrics {
   totalManagedServers: number;
   onlineServers: number;
@@ -16,5 +25,6 @@ export interface DashboardMetrics {
   openIncidentsCount: number;
   recentActivityCount: number;
   systemHealth: 'OPTIMAL' | 'DEGRADED' | 'CRITICAL';
+  utilization: InfrastructureUtilization;
   timestamp: string;
 }

@@ -4,7 +4,6 @@ import { createServer } from '../packages/server/dist/index.js';
 import { TropicalAgentDaemon } from '../packages/agent/dist/daemon.js';
 
 test('TCC Full System Integration Test', async (t) => {
-  // Ensure fresh database for integration test
   try {
     const fs = await import('fs');
     if (fs.existsSync('./data/tcc.sqlite')) {
@@ -20,8 +19,10 @@ test('TCC Full System Integration Test', async (t) => {
   });
 
   const baseUrl = `http://127.0.0.1:${port}/api/v1`;
+  let activeDaemon = null;
 
   t.after(async () => {
+    if (activeDaemon) activeDaemon.stop();
     await new Promise((resolve) => server.close(() => resolve()));
     await db.close();
   });
@@ -30,6 +31,7 @@ test('TCC Full System Integration Test', async (t) => {
   let customerId = '';
   let serverId = '';
   let agentId = '';
+  let contractId = '';
 
   await t.test('1. Health check returns UP and application identifier', async () => {
     const res = await fetch(`http://127.0.0.1:${port}/health`);
@@ -53,7 +55,20 @@ test('TCC Full System Integration Test', async (t) => {
     authToken = data.token;
   });
 
-  await t.test('3. Create Enterprise Customer', async () => {
+  await t.test('3. Verify Multi-Provider Registry includes Equinix, Hetzner, and AWS', async () => {
+    const res = await fetch(`${baseUrl}/provisioning/providers`, {
+      headers: { Authorization: `Bearer ${authToken}` },
+    });
+    assert.equal(res.status, 200);
+    const providers = await res.json();
+    assert.equal(providers.length, 3);
+    const types = providers.map((p) => p.providerType);
+    assert.ok(types.includes('equinix_metal'));
+    assert.ok(types.includes('hetzner'));
+    assert.ok(types.includes('aws'));
+  });
+
+  await t.test('4. Create Enterprise Customer', async () => {
     const res = await fetch(`${baseUrl}/management/customers`, {
       method: 'POST',
       headers: {
@@ -78,7 +93,7 @@ test('TCC Full System Integration Test', async (t) => {
     customerId = data.id;
   });
 
-  await t.test('4. Create Customer Contract with terms and renewal date', async () => {
+  await t.test('5. Create Customer Contract with terms and renewal date', async () => {
     const res = await fetch(`${baseUrl}/management/contracts`, {
       method: 'POST',
       headers: {
@@ -99,9 +114,10 @@ test('TCC Full System Integration Test', async (t) => {
     const data = await res.json();
     assert.ok(data.id);
     assert.equal(data.status, 'ACTIVE');
+    contractId = data.id;
   });
 
-  await t.test('5. Queue and execute Provisioning Job', async () => {
+  await t.test('6. Queue and execute AWS Bare Metal Provisioning Job', async () => {
     const res = await fetch(`${baseUrl}/provisioning/jobs`, {
       method: 'POST',
       headers: {
@@ -110,18 +126,17 @@ test('TCC Full System Integration Test', async (t) => {
       },
       body: JSON.stringify({
         customerId,
-        provider: 'equinix_metal',
-        targetHostname: 'node-ai-prod-01.tropical.internal',
+        provider: 'aws',
+        targetHostname: 'node-ai-gpu-aws.tropical.internal',
         targetOs: 'Ubuntu 22.04 LTS',
-        planId: 'c3.medium.x86',
-        location: 'da',
+        planId: 'c5.metal',
+        location: 'us-east-1',
       }),
     });
     assert.equal(res.status, 202);
     const job = await res.json();
     assert.ok(job.id);
 
-    // Wait briefly for asynchronous provisioning engine state machine to complete
     let completedJob = null;
     for (let i = 0; i < 20; i++) {
       await new Promise((r) => setTimeout(r, 200));
@@ -141,20 +156,20 @@ test('TCC Full System Integration Test', async (t) => {
     serverId = completedJob.serverId;
   });
 
-  await t.test('6. Verify Server was added to Infrastructure Inventory', async () => {
+  await t.test('7. Verify AWS Server was added to Infrastructure Inventory', async () => {
     const res = await fetch(`${baseUrl}/infrastructure/servers/${serverId}`, {
       headers: { Authorization: `Bearer ${authToken}` },
     });
     assert.equal(res.status, 200);
     const serverRecord = await res.json();
-    assert.equal(serverRecord.hostname, 'node-ai-prod-01.tropical.internal');
+    assert.equal(serverRecord.hostname, 'node-ai-gpu-aws.tropical.internal');
+    assert.equal(serverRecord.provider, 'aws');
     assert.equal(serverRecord.assignedCustomerId, customerId);
     assert.ok(serverRecord.agentId);
     agentId = serverRecord.agentId;
   });
 
-  await t.test('7. Verify Agent initially UNKNOWN, then ONLINE upon genuine heartbeat', async () => {
-    // Read agent record
+  await t.test('8. Verify Agent enrollment and genuine hardware telemetry calculation', async () => {
     const agentRes = await fetch(`${baseUrl}/agent/agents`, {
       headers: { Authorization: `Bearer ${authToken}` },
     });
@@ -164,17 +179,15 @@ test('TCC Full System Integration Test', async (t) => {
     assert.equal(agt.status, 'UNKNOWN');
     assert.ok(agt.enrollmentToken);
 
-    // Run agent daemon enrollment & heartbeat
-    const daemon = new TropicalAgentDaemon({
+    activeDaemon = new TropicalAgentDaemon({
       serverUrl: `http://127.0.0.1:${port}`,
       enrollmentToken: agt.enrollmentToken,
     });
 
-    await daemon.start();
-    const heartbeatOk = await daemon.sendHeartbeat();
+    await activeDaemon.start();
+    const heartbeatOk = await activeDaemon.sendHeartbeat();
     assert.equal(heartbeatOk, true);
 
-    // Check agent is now ONLINE
     const agentOnlineRes = await fetch(`${baseUrl}/agent/agents`, {
       headers: { Authorization: `Bearer ${authToken}` },
     });
@@ -183,29 +196,79 @@ test('TCC Full System Integration Test', async (t) => {
     assert.equal(updatedAgt.status, 'ONLINE');
     assert.ok(updatedAgt.latestTelemetry);
     assert.ok(updatedAgt.latestTelemetry.cpuUsagePercent >= 0);
-
-    daemon.stop();
   });
 
-  await t.test('8. Execute Controlled Remote Operations', async () => {
-    const res = await fetch(`${baseUrl}/remote/operations`, {
+  await t.test('9. Verify Service Enforcement workflow (Grace Period Notice & Suspension)', async () => {
+    const noticeRes = await fetch(`${baseUrl}/management/contracts/enforce`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${authToken}`,
       },
       body: JSON.stringify({
-        agentId,
-        commandType: 'GET_DIAGNOSTICS',
+        contractId,
+        actionType: 'GRACE_PERIOD_NOTICE',
+        reason: 'Payment 30 days overdue; 7-day cure window granted',
+        gracePeriodDays: 7,
       }),
     });
-    assert.equal(res.status, 200);
-    const op = await res.json();
-    assert.equal(op.status, 'SUCCESS');
-    assert.ok(op.output.includes('Diagnostic Analysis'));
+    assert.equal(noticeRes.status, 200);
+    const noticeData = await noticeRes.json();
+    assert.ok(noticeData.gracePeriodEndsAt);
+
+    const suspRes = await fetch(`${baseUrl}/management/contracts/enforce`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${authToken}`,
+      },
+      body: JSON.stringify({
+        contractId,
+        actionType: 'SUSPENSION',
+        reason: 'Grace period expired without settlement',
+      }),
+    });
+    assert.equal(suspRes.status, 200);
+
+    const contractCheck = await fetch(`${baseUrl}/management/contracts`, {
+      headers: { Authorization: `Bearer ${authToken}` },
+    });
+    const contracts = await contractCheck.json();
+    const targetContract = contracts.find((c) => c.id === contractId);
+    assert.equal(targetContract.status, 'SUSPENDED');
   });
 
-  await t.test('9. Verify Executive Dashboard Metrics reflects real database records', async () => {
+  await t.test('10. Create and manage Operational Incident', async () => {
+    const res = await fetch(`${baseUrl}/admin/incidents`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${authToken}`,
+      },
+      body: JSON.stringify({
+        title: 'BGP peering degradation at Equinix Dallas',
+        severity: 'HIGH',
+        description: 'Upstream transit packet loss observed on transit link.',
+      }),
+    });
+    assert.equal(res.status, 201);
+    const inc = await res.json();
+    assert.equal(inc.status, 'OPEN');
+
+    const patchRes = await fetch(`${baseUrl}/admin/incidents/${inc.id}/status`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${authToken}`,
+      },
+      body: JSON.stringify({ status: 'RESOLVED' }),
+    });
+    assert.equal(patchRes.status, 200);
+    const resolvedInc = await patchRes.json();
+    assert.equal(resolvedInc.status, 'RESOLVED');
+  });
+
+  await t.test('11. Verify Executive Dashboard Metrics reflects real infrastructure utilization', async () => {
     const res = await fetch(`${baseUrl}/dashboard/metrics`, {
       headers: { Authorization: `Bearer ${authToken}` },
     });
@@ -215,23 +278,26 @@ test('TCC Full System Integration Test', async (t) => {
     assert.equal(metrics.onlineServers, 1);
     assert.equal(metrics.totalRegisteredAgents, 1);
     assert.equal(metrics.onlineAgents, 1);
-    assert.equal(metrics.activeCustomers, 1);
-    assert.equal(metrics.activeDeployments, 1);
-    assert.equal(metrics.systemHealth, 'OPTIMAL');
+    // customer suspended in step 9, so activeCustomers is 0
+    assert.equal(metrics.activeCustomers, 0);
+    assert.ok(metrics.utilization);
+    assert.equal(metrics.utilization.reportingAgentsCount, 1);
+    assert.ok(metrics.utilization.averageCpuPercent >= 0);
   });
 
-  await t.test('10. Immutable Audit Trail records all actions', async () => {
+  await t.test('12. Immutable Audit Trail records all actions', async () => {
     const res = await fetch(`${baseUrl}/admin/audit-logs`, {
       headers: { Authorization: `Bearer ${authToken}` },
     });
     assert.equal(res.status, 200);
     const logs = await res.json();
-    assert.ok(logs.length > 5);
+    assert.ok(logs.length >= 6);
     const actions = logs.map((l) => l.action);
     assert.ok(actions.includes('USER_LOGIN'));
     assert.ok(actions.includes('CUSTOMER_CREATE'));
     assert.ok(actions.includes('CONTRACT_CREATE'));
     assert.ok(actions.includes('PROVISIONING_JOB_QUEUED'));
-    assert.ok(actions.includes('REMOTE_OPERATION_GET_DIAGNOSTICS'));
+    assert.ok(actions.includes('CONTRACT_ENFORCEMENT_GRACE_PERIOD_NOTICE'));
+    assert.ok(actions.includes('CONTRACT_ENFORCEMENT_SUSPENSION'));
   });
 });

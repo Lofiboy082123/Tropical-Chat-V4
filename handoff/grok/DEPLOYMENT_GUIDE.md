@@ -75,3 +75,22 @@ node packages/agent/dist/index.js
   1. Stop TCC Backend: `pkill -f 'packages/server/dist/index.js'`.
   2. Restore file: `cp /path/to/backup.sqlite ./data/tcc.sqlite`.
   3. Start TCC Backend. Migrations will verify schema integrity automatically on startup.
+
+---
+
+## 6. Building macOS .DMG Installer
+
+The desktop application is configured with `electron-builder` to produce native macOS `.dmg` and `.zip` distribution bundles.
+
+### Build Command:
+```bash
+# From workspace root:
+npm run build --workspace=@tcc/desktop
+cd packages/desktop && npm run build:dmg
+```
+
+### Configuration Details:
+- **Application ID:** `com.tropicalservers.tcc`
+- **Output Directory:** `packages/desktop/release/`
+- **Targets:** `dmg` (Disk Image installer with drag-and-drop to `/Applications`), `zip`
+- **Entitlements:** Hardened runtime entitlements configured in `packages/desktop/build/entitlements.mac.plist`.

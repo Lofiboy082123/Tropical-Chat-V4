@@ -1,5 +1,5 @@
 import { IDatabaseDriver } from '../db/driver.js';
-import { DashboardMetrics } from '@tcc/shared';
+import { DashboardMetrics, InfrastructureUtilization } from '@tcc/shared';
 
 export class DashboardService {
   constructor(private db: IDatabaseDriver) {}
@@ -51,6 +51,42 @@ export class DashboardService {
       `SELECT COUNT(*) as count FROM audit_logs WHERE timestamp >= datetime('now', '-1 day')`
     );
 
+    // Compute genuine infrastructure utilization from latest authenticated agent telemetry
+    const reportingAgents = this.db.query<{ latest_telemetry_json: string }>(
+      `SELECT latest_telemetry_json FROM agents WHERE is_revoked = 0 AND status = 'ONLINE' AND latest_telemetry_json IS NOT NULL`
+    );
+
+    let sumCpu = 0;
+    let sumMemPercent = 0;
+    let sumStoragePercent = 0;
+    let totalRx = 0;
+    let totalTx = 0;
+    const count = reportingAgents.length;
+
+    for (const r of reportingAgents) {
+      try {
+        const t = JSON.parse(r.latest_telemetry_json);
+        sumCpu += t.cpuUsagePercent || 0;
+        if (t.memoryTotalMb > 0) {
+          sumMemPercent += (t.memoryUsedMb / t.memoryTotalMb) * 100;
+        }
+        if (t.storageTotalGb > 0) {
+          sumStoragePercent += (t.storageUsedGb / t.storageTotalGb) * 100;
+        }
+        totalRx += t.networkRxBytesPerSec || 0;
+        totalTx += t.networkTxBytesPerSec || 0;
+      } catch (e) {}
+    }
+
+    const utilization: InfrastructureUtilization = {
+      averageCpuPercent: count > 0 ? Math.round((sumCpu / count) * 10) / 10 : null,
+      averageMemoryPercent: count > 0 ? Math.round((sumMemPercent / count) * 10) / 10 : null,
+      averageStoragePercent: count > 0 ? Math.round((sumStoragePercent / count) * 10) / 10 : null,
+      totalBandwidthRxBytesSec: totalRx,
+      totalBandwidthTxBytesSec: totalTx,
+      reportingAgentsCount: count,
+    };
+
     let systemHealth: 'OPTIMAL' | 'DEGRADED' | 'CRITICAL' = 'OPTIMAL';
     if ((openIncidentsRow?.count || 0) > 0 || (offlineServersRow?.count || 0) > 0) {
       systemHealth = 'DEGRADED';
@@ -80,6 +116,7 @@ export class DashboardService {
       openIncidentsCount: openIncidentsRow?.count || 0,
       recentActivityCount: recentActivityRow?.count || 0,
       systemHealth,
+      utilization,
       timestamp: new Date().toISOString(),
     };
   }

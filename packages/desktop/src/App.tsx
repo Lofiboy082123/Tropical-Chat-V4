@@ -11,6 +11,11 @@ import {
   RefreshCw,
   Cpu,
   Layers,
+  AlertOctagon,
+  CheckCircle,
+  Clock,
+  Shield,
+  Zap,
 } from 'lucide-react';
 import { api } from './services/api';
 import { DashboardMetrics, ServerRecord, AgentRecord, CustomerRecord, ContractRecord } from '@tcc/shared';
@@ -36,6 +41,7 @@ export function App() {
   const [incidents, setIncidents] = React.useState<any[]>([]);
   const [loading, setLoading] = React.useState(false);
 
+  // Modals state
   const [showProvModal, setShowProvModal] = React.useState(false);
   const [provForm, setProvForm] = React.useState({
     customerId: '',
@@ -44,6 +50,19 @@ export function App() {
     targetOs: 'Ubuntu 22.04 LTS',
     planId: 'c3.medium.x86',
     location: 'da',
+  });
+
+  const [showEnforceModal, setShowEnforceModal] = React.useState(false);
+  const [enforceContractId, setEnforceContractId] = React.useState('');
+  const [enforceActionType, setEnforceActionType] = React.useState<string>('GRACE_PERIOD_NOTICE');
+  const [enforceReason, setEnforceReason] = React.useState('');
+  const [enforceGraceDays, setEnforceGraceDays] = React.useState(7);
+
+  const [showIncidentModal, setShowIncidentModal] = React.useState(false);
+  const [incForm, setIncForm] = React.useState({
+    title: '',
+    severity: 'MEDIUM',
+    description: '',
   });
 
   const [selectedAgentId, setSelectedAgentId] = React.useState<string>('');
@@ -104,7 +123,15 @@ export function App() {
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await fetch('http://localhost:4000/api/v1/auth/logout', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${api.getToken()}`,
+        },
+      });
+    } catch (e) {}
     api.setToken(null);
     setToken(null);
     setCurrentUser(null);
@@ -118,6 +145,67 @@ export function App() {
       refreshData();
     } catch (err: any) {
       alert(`Provisioning error: ${err.message}`);
+    }
+  };
+
+  const handleExecuteEnforcement = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const res = await fetch('http://localhost:4000/api/v1/management/contracts/enforce', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${api.getToken()}`,
+        },
+        body: JSON.stringify({
+          contractId: enforceContractId,
+          actionType: enforceActionType,
+          reason: enforceReason,
+          gracePeriodDays: Number(enforceGraceDays),
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Failed to execute enforcement');
+      }
+      setShowEnforceModal(false);
+      setEnforceReason('');
+      refreshData();
+    } catch (err: any) {
+      alert(`Service Enforcement error: ${err.message}`);
+    }
+  };
+
+  const handleCreateIncident = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const res = await fetch('http://localhost:4000/api/v1/admin/incidents', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${api.getToken()}`,
+        },
+        body: JSON.stringify(incForm),
+      });
+      if (!res.ok) throw new Error('Failed to record incident');
+      setShowIncidentModal(false);
+      setIncForm({ title: '', severity: 'MEDIUM', description: '' });
+      refreshData();
+    } catch (err: any) {
+      alert(`Incident error: ${err.message}`);
+    }
+  };
+
+  const handleRevokeAgent = async (agentId: string) => {
+    if (!confirm(`Are you sure you want to revoke credentials for agent ${agentId}?`)) return;
+    try {
+      await fetch(`http://localhost:4000/api/v1/agent/agents/${agentId}/revoke`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${api.getToken()}` },
+      });
+      refreshData();
+    } catch (err: any) {
+      alert(`Revocation error: ${err.message}`);
     }
   };
 
@@ -321,6 +409,7 @@ export function App() {
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           {activeTab === 'dashboard' && metrics && (
             <div className="space-y-6">
+              {/* Primary KPI Grid */}
               <div className="grid grid-cols-4 gap-4">
                 <div className="bg-[#111827] border border-[#1e293b] rounded p-4">
                   <div className="text-xs font-semibold text-slate-400 uppercase">Managed Servers</div>
@@ -357,6 +446,58 @@ export function App() {
                 </div>
               </div>
 
+              {/* Genuine Infrastructure Utilization Panel */}
+              <div className="bg-[#111827] border border-[#1e293b] rounded p-5">
+                <div className="flex justify-between items-center mb-4">
+                  <div>
+                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                      <Zap className="h-4 w-4 text-[#14b8a6]" />
+                      Genuine Infrastructure Utilization
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Aggregated live from {metrics.utilization?.reportingAgentsCount || 0} authenticated customer agents
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-4 gap-4">
+                  <div className="bg-[#0b1220] border border-[#1e293b] rounded p-4">
+                    <div className="text-xs text-slate-400">Average CPU Utilization</div>
+                    <div className="text-xl font-bold text-white mt-1">
+                      {metrics.utilization?.averageCpuPercent !== null && metrics.utilization?.averageCpuPercent !== undefined
+                        ? `${metrics.utilization.averageCpuPercent}%`
+                        : 'Awaiting Telemetry'}
+                    </div>
+                  </div>
+
+                  <div className="bg-[#0b1220] border border-[#1e293b] rounded p-4">
+                    <div className="text-xs text-slate-400">Average Memory Consumption</div>
+                    <div className="text-xl font-bold text-white mt-1">
+                      {metrics.utilization?.averageMemoryPercent !== null && metrics.utilization?.averageMemoryPercent !== undefined
+                        ? `${metrics.utilization.averageMemoryPercent}%`
+                        : 'Awaiting Telemetry'}
+                    </div>
+                  </div>
+
+                  <div className="bg-[#0b1220] border border-[#1e293b] rounded p-4">
+                    <div className="text-xs text-slate-400">Storage Allocated & Used</div>
+                    <div className="text-xl font-bold text-white mt-1">
+                      {metrics.utilization?.averageStoragePercent !== null && metrics.utilization?.averageStoragePercent !== undefined
+                        ? `${metrics.utilization.averageStoragePercent}%`
+                        : 'Awaiting Telemetry'}
+                    </div>
+                  </div>
+
+                  <div className="bg-[#0b1220] border border-[#1e293b] rounded p-4">
+                    <div className="text-xs text-slate-400">Combined Network Bandwidth</div>
+                    <div className="text-xl font-bold text-[#14b8a6] mt-1">
+                      {Math.round(((metrics.utilization?.totalBandwidthRxBytesSec || 0) + (metrics.utilization?.totalBandwidthTxBytesSec || 0)) / 1024)} KB/s
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Infrastructure Summary Table */}
               <div className="bg-[#111827] border border-[#1e293b] rounded">
                 <div className="p-4 border-b border-[#1e293b] flex justify-between items-center">
                   <h3 className="text-sm font-bold text-white">Live Infrastructure Status</h3>
@@ -445,7 +586,7 @@ export function App() {
                       <tr key={s.id} className="hover:bg-[#1e293b]/50">
                         <td className="p-3 font-mono text-slate-500">{s.id}</td>
                         <td className="p-3 font-mono font-bold text-white">{s.hostname}</td>
-                        <td className="p-3 capitalize">{s.provider}</td>
+                        <td className="p-3 capitalize">{s.provider.replace('_', ' ')}</td>
                         <td className="p-3 font-mono text-slate-300">{s.ipAddress}</td>
                         <td className="p-3 text-slate-300">{s.operatingSystem}</td>
                         <td className="p-3 text-slate-400">
@@ -557,13 +698,23 @@ export function App() {
                         <div className="font-mono font-bold text-sm text-white">{agt.hostname}</div>
                         <div className="text-[11px] text-slate-500 font-mono">ID: {agt.id} | v{agt.version}</div>
                       </div>
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                        agt.status === 'ONLINE' ? 'bg-green-900/40 text-[#22c55e] border border-green-700/60' :
-                        agt.status === 'OFFLINE' ? 'bg-red-900/40 text-red-400 border border-red-700/60' :
-                        'bg-slate-800 text-slate-400'
-                      }`}>
-                        {agt.status}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          agt.status === 'ONLINE' ? 'bg-green-900/40 text-[#22c55e] border border-green-700/60' :
+                          agt.status === 'OFFLINE' ? 'bg-red-900/40 text-red-400 border border-red-700/60' :
+                          'bg-slate-800 text-slate-400'
+                        }`}>
+                          {agt.status}
+                        </span>
+                        {!agt.isRevoked && (
+                          <button
+                            onClick={() => handleRevokeAgent(agt.id)}
+                            className="text-[10px] bg-red-900/30 hover:bg-red-900/60 text-red-300 px-2 py-0.5 rounded border border-red-700/50"
+                          >
+                            Revoke
+                          </button>
+                        )}
+                      </div>
                     </div>
 
                     {agt.latestTelemetry ? (
@@ -630,7 +781,11 @@ export function App() {
                         <td className="p-3 text-[#14b8a6]">{c.serviceTier}</td>
                         <td className="p-3 font-mono text-slate-400">{c.assignedServerIds?.length || 0} servers</td>
                         <td className="p-3">
-                          <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-green-900/40 text-[#22c55e]">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                            c.status === 'active' ? 'bg-green-900/40 text-[#22c55e]' :
+                            c.status === 'suspended' ? 'bg-red-900/40 text-red-300' :
+                            'bg-slate-800 text-slate-400'
+                          }`}>
                             {c.status}
                           </span>
                         </td>
@@ -651,7 +806,10 @@ export function App() {
 
           {activeTab === 'contracts' && (
             <div className="space-y-4">
-              <h3 className="text-sm font-bold text-white">Customer Contracts & Service Enforcement</h3>
+              <div className="flex justify-between items-center">
+                <h3 className="text-sm font-bold text-white">Customer Contracts & Service Enforcement</h3>
+              </div>
+
               <div className="bg-[#111827] border border-[#1e293b] rounded overflow-x-auto">
                 <table className="w-full text-left text-xs">
                   <thead className="bg-[#0f172a] text-slate-400 border-b border-[#1e293b]">
@@ -662,6 +820,7 @@ export function App() {
                       <th className="p-3">Monthly Value</th>
                       <th className="p-3">Renewal Date</th>
                       <th className="p-3">Status</th>
+                      <th className="p-3">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#1e293b]">
@@ -673,15 +832,30 @@ export function App() {
                         <td className="p-3 font-semibold text-[#14b8a6]">${cnt.monthlyValueUsd}/mo</td>
                         <td className="p-3 text-slate-400">{cnt.renewalDate}</td>
                         <td className="p-3">
-                          <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-green-900/40 text-[#22c55e]">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                            cnt.status === 'ACTIVE' ? 'bg-green-900/40 text-[#22c55e]' :
+                            cnt.status === 'SUSPENDED' ? 'bg-red-900/40 text-red-300' :
+                            'bg-amber-900/40 text-amber-300'
+                          }`}>
                             {cnt.status}
                           </span>
+                        </td>
+                        <td className="p-3">
+                          <button
+                            onClick={() => {
+                              setEnforceContractId(cnt.id);
+                              setShowEnforceModal(true);
+                            }}
+                            className="bg-[#1e293b] hover:bg-[#14b8a6] hover:text-[#0b1220] px-2.5 py-1 rounded text-[10px] font-bold transition"
+                          >
+                            Enforcement Workflow
+                          </button>
                         </td>
                       </tr>
                     ))}
                     {contracts.length === 0 && (
                       <tr>
-                        <td colSpan={6} className="p-6 text-center text-slate-500">
+                        <td colSpan={7} className="p-6 text-center text-slate-500">
                           No customer contracts currently on file.
                         </td>
                       </tr>
@@ -748,7 +922,16 @@ export function App() {
 
           {activeTab === 'incidents' && (
             <div className="space-y-4">
-              <h3 className="text-sm font-bold text-white">Operational Incidents & Severity Tracking</h3>
+              <div className="flex justify-between items-center">
+                <h3 className="text-sm font-bold text-white">Operational Incidents & Severity Tracking</h3>
+                <button
+                  onClick={() => setShowIncidentModal(true)}
+                  className="bg-[#14b8a6] hover:bg-[#0d9488] text-[#0b1220] px-3 py-1.5 rounded text-xs font-bold transition"
+                >
+                  + Report Incident
+                </button>
+              </div>
+
               <div className="bg-[#111827] border border-[#1e293b] rounded overflow-x-auto">
                 <table className="w-full text-left text-xs">
                   <thead className="bg-[#0f172a] text-slate-400 border-b border-[#1e293b]">
@@ -838,6 +1021,7 @@ export function App() {
         </div>
       </main>
 
+      {/* Provisioning Modal */}
       {showProvModal && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
           <div className="bg-[#111827] border border-[#1e293b] rounded-lg max-w-md w-full p-6 shadow-2xl">
@@ -863,6 +1047,7 @@ export function App() {
                 >
                   <option value="equinix_metal">Equinix Metal Bare Metal</option>
                   <option value="hetzner">Hetzner Dedicated Root</option>
+                  <option value="aws">Amazon Web Services (EC2 Dedicated)</option>
                 </select>
               </div>
 
@@ -876,6 +1061,7 @@ export function App() {
                   <option value="c3.medium.x86">c3.medium.x86 (24 cores / 64GB RAM / 960GB NVMe)</option>
                   <option value="m3.large.x86">m3.large.x86 (32 cores / 256GB RAM / 3.8TB NVMe)</option>
                   <option value="ax102">ax102 Ryzen 9 7950X3D (16 cores / 128GB RAM)</option>
+                  <option value="c5.metal">AWS c5.metal (96 cores / 192GB RAM)</option>
                 </select>
               </div>
 
@@ -915,6 +1101,139 @@ export function App() {
                   className="px-4 py-2 bg-[#14b8a6] hover:bg-[#0d9488] text-[#0b1220] font-bold rounded text-xs transition"
                 >
                   Submit Provisioning Job
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Service Enforcement Modal */}
+      {showEnforceModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
+          <div className="bg-[#111827] border border-[#1e293b] rounded-lg max-w-md w-full p-6 shadow-2xl">
+            <h3 className="text-base font-bold text-white mb-2 flex items-center gap-2">
+              <AlertOctagon className="h-5 w-5 text-amber-400" />
+              Service Enforcement Decision
+            </h3>
+            <p className="text-xs text-slate-400 mb-4">
+              Contract ID: <span className="font-mono text-white">{enforceContractId}</span>. Actions require recorded administrative reasons and adherence to customer grace periods. No automatic data destruction will occur.
+            </p>
+
+            <form onSubmit={handleExecuteEnforcement} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 mb-1">Enforcement Action Type</label>
+                <select
+                  value={enforceActionType}
+                  onChange={(e) => setEnforceActionType(e.target.value)}
+                  className="w-full bg-[#0b1220] border border-[#1e293b] rounded px-3 py-2 text-sm text-white"
+                >
+                  <option value="GRACE_PERIOD_NOTICE">Grace Period Notice (Pre-suspension)</option>
+                  <option value="DEFAULT_WARNING">Default Warning Notice</option>
+                  <option value="SUSPENSION">Execute Graceful Suspension (Recoverable)</option>
+                  <option value="REINSTATEMENT">Reinstate Active Service</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 mb-1">Notice & Grace Period (Days)</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="30"
+                  value={enforceGraceDays}
+                  onChange={(e) => setEnforceGraceDays(Number(e.target.value))}
+                  className="w-full bg-[#0b1220] border border-[#1e293b] rounded px-3 py-2 text-sm text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 mb-1">Recorded Administrative Reason</label>
+                <textarea
+                  value={enforceReason}
+                  onChange={(e) => setEnforceReason(e.target.value)}
+                  placeholder="Record formal justification for the compliance audit trail..."
+                  className="w-full bg-[#0b1220] border border-[#1e293b] rounded px-3 py-2 text-sm text-white h-24"
+                  required
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4 border-t border-[#1e293b]">
+                <button
+                  type="button"
+                  onClick={() => setShowEnforceModal(false)}
+                  className="px-4 py-2 bg-[#1e293b] hover:bg-slate-700 text-slate-300 rounded text-xs transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-[#0b1220] font-bold rounded text-xs transition"
+                >
+                  Authorize Enforcement
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Incident Modal */}
+      {showIncidentModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
+          <div className="bg-[#111827] border border-[#1e293b] rounded-lg max-w-md w-full p-6 shadow-2xl">
+            <h3 className="text-base font-bold text-white mb-4">Report Operational Incident</h3>
+            <form onSubmit={handleCreateIncident} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 mb-1">Incident Title</label>
+                <input
+                  type="text"
+                  value={incForm.title}
+                  onChange={(e) => setIncForm({ ...incForm, title: e.target.value })}
+                  className="w-full bg-[#0b1220] border border-[#1e293b] rounded px-3 py-2 text-sm text-white"
+                  placeholder="e.g. Upstream Provider Fiber Degraded"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 mb-1">Severity</label>
+                <select
+                  value={incForm.severity}
+                  onChange={(e) => setIncForm({ ...incForm, severity: e.target.value })}
+                  className="w-full bg-[#0b1220] border border-[#1e293b] rounded px-3 py-2 text-sm text-white"
+                >
+                  <option value="LOW">Low</option>
+                  <option value="MEDIUM">Medium</option>
+                  <option value="HIGH">High</option>
+                  <option value="CRITICAL">Critical</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 mb-1">Description & Scope</label>
+                <textarea
+                  value={incForm.description}
+                  onChange={(e) => setIncForm({ ...incForm, description: e.target.value })}
+                  className="w-full bg-[#0b1220] border border-[#1e293b] rounded px-3 py-2 text-sm text-white h-24"
+                  placeholder="Detail symptoms, scope of affected infrastructure, and immediate remediation steps..."
+                  required
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4 border-t border-[#1e293b]">
+                <button
+                  type="button"
+                  onClick={() => setShowIncidentModal(false)}
+                  className="px-4 py-2 bg-[#1e293b] hover:bg-slate-700 text-slate-300 rounded text-xs transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-[#14b8a6] hover:bg-[#0d9488] text-[#0b1220] font-bold rounded text-xs transition"
+                >
+                  Submit Incident
                 </button>
               </div>
             </form>

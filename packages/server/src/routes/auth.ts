@@ -33,6 +33,21 @@ export function createAuthRouter(authService: AuthService): Router {
     }
   });
 
+  router.post('/logout', authMiddleware, (req: Request, res: Response) => {
+    const ip = req.ip || req.socket.remoteAddress || 'unknown';
+    // Audit logout action
+    (authService as any).audit?.log({
+      actorId: req.user!.id,
+      actorUsername: req.user!.username,
+      action: 'USER_LOGOUT',
+      targetType: 'USER',
+      targetId: req.user!.id,
+      ipAddress: ip,
+      result: 'SUCCESS',
+    });
+    return res.json({ success: true, message: 'Logged out successfully' });
+  });
+
   router.get('/me', authMiddleware, (req: Request, res: Response) => {
     return res.json({ user: req.user });
   });

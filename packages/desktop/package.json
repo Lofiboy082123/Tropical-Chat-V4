@@ -6,7 +6,10 @@
   "scripts": {
     "build": "vite build && tsc -p tsconfig.electron.json",
     "dev": "vite",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "build:dmg": "npm run build && electron-builder --mac dmg",
+    "dist:mac": "npm run build && electron-builder --mac",
+    "pack": "electron-builder --dir"
   },
   "dependencies": {
     "@tcc/shared": "*",
@@ -20,9 +23,51 @@
     "@vitejs/plugin-react": "^4.2.1",
     "autoprefixer": "^10.4.19",
     "electron": "^30.0.1",
+    "electron-builder": "^24.13.3",
     "postcss": "^8.4.38",
     "tailwindcss": "^3.4.3",
     "typescript": "^5.3.3",
     "vite": "^5.2.10"
+  },
+  "build": {
+    "appId": "com.tropicalservers.tcc",
+    "productName": "Tropical Control Center",
+    "copyright": "Copyright © 2026 Tropical Servers",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist"
+    },
+    "dmg": {
+      "title": "Tropical Control Center ${version}",
+      "contents": [
+        {
+          "x": 130,
+          "y": 220
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ],
+      "window": {
+        "width": 540,
+        "height": 380
+      }
+    }
   }
 }

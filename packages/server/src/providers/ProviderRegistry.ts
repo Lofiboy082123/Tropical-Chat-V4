@@ -1,6 +1,7 @@
 import { IProviderAdapter } from './IProviderAdapter.js';
 import { EquinixMetalProviderAdapter } from './EquinixMetalProviderAdapter.js';
 import { HetznerProviderAdapter } from './HetznerProviderAdapter.js';
+import { AwsProviderAdapter } from './AwsProviderAdapter.js';
 import { ProviderType } from '@tcc/shared';
 
 export class ProviderRegistry {
@@ -16,6 +17,12 @@ export class ProviderRegistry {
     this.register(
       new HetznerProviderAdapter({
         apiToken: process.env.HETZNER_API_TOKEN || 'default-hetzner-token',
+      })
+    );
+    this.register(
+      new AwsProviderAdapter({
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID || 'default-aws-access-key',
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || 'default-aws-secret-key',
       })
     );
   }
